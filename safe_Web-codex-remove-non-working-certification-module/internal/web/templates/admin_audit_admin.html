@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Admin Audit Logs</title>
+</head>
+<body>
+  <h1>Admin Audit Logs</h1>
+  <ul>
+    {{range .AdminAudit}}
+      <li>{{.CreatedAt.Format "2006-01-02 15:04:05Z07:00"}} - {{.Actor}} - {{.Action}} {{.TargetType}} {{.TargetID}}</li>
+    {{else}}
+      <li>No admin entries.</li>
+    {{end}}
+  </ul>
+  <p><a href="/admin/audit">Back to audit</a></p>
+</body>
+</html>

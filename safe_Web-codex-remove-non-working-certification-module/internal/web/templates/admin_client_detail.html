@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Client Detail</title>
+</head>
+<body>
+  <h1>Client {{.Client.ID}} - {{.Client.Name}}</h1>
+  <p>Status: {{.Client.Status}}</p>
+  <form method="POST" action="/admin/clients/{{.Client.ID}}">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    {{if eq .Client.Status "active"}}
+      <button name="action" value="disable">Disable</button>
+    {{else}}
+      <button name="action" value="enable">Enable</button>
+    {{end}}
+  </form>
+
+  <h2>Users</h2>
+  <form method="POST" action="/admin/clients/{{.Client.ID}}">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="action" value="create_user">
+    <label>Username <input name="username" required></label>
+    <label>Password <input name="password" type="password" required></label>
+    <label>User IP/CIDR <input name="ip" required></label>
+    <button type="submit">Create user</button>
+  </form>
+  <ul>
+    {{range .Users}}
+      <li>{{.Username}} — IP: {{with index $.UserIPs .ID}}{{.}}{{else}}not set{{end}}</li>
+    {{else}}
+      <li>No users.</li>
+    {{end}}
+  </ul>
+
+  <p><a href="/admin/clients">Back</a></p>
+</body>
+</html>

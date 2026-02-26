@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Enrollment Tokens</title>
+</head>
+<body>
+  <h1>Enrollment Tokens</h1>
+  <ul>
+    {{range .Tokens}}
+      <li>Client {{.ClientID}} - {{printf "%.8s" .TokenHash}}*** (expires {{.ExpiresAt}})
+        {{if .UsedAt.IsZero}}
+          <form method="POST" action="/admin/tokens" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="token_id" value="{{.ID}}">
+            <button type="submit">Revoke</button>
+          </form>
+        {{else}}
+          <span>Used</span>
+        {{end}}
+      </li>
+    {{else}}
+      <li>No tokens.</li>
+    {{end}}
+  </ul>
+  <p><a href="/admin/dashboard">Back</a></p>
+</body>
+</html>

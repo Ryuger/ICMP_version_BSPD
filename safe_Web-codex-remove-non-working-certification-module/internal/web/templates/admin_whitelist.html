@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Whitelist</title>
+</head>
+<body>
+  <h1>Whitelist</h1>
+  <form method="POST" action="/admin/whitelist">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>IP/CIDR <input name="entry" required></label>
+    <label>Label <input name="label"></label>
+    <button type="submit">Add</button>
+  </form>
+  <ul>
+    {{range .WhitelistEntries}}
+      <li>{{.Value}} ({{.OwnerType}} {{.OwnerID}} {{.Label}})
+        <form method="POST" action="/admin/whitelist" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <input type="hidden" name="delete_id" value="{{.ID}}">
+          <button type="submit">Delete</button>
+        </form>
+      </li>
+    {{else}}
+      <li>No entries.</li>
+    {{end}}
+  </ul>
+  <p><a href="/admin/dashboard">Back</a></p>
+</body>
+</html>

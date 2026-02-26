@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>User Audit Logs</title>
+</head>
+<body>
+  <h1>User Audit Logs</h1>
+  <ul>
+    {{range .UserAudit}}
+      <li>{{.CreatedAt.Format "2006-01-02 15:04:05Z07:00"}} - {{.IP}} - {{if .Actor}}{{.Actor}}{{else}}anonymous{{end}} - {{.EventType}} - {{.Details}}</li>
+    {{else}}
+      <li>No user entries.</li>
+    {{end}}
+  </ul>
+  <p><a href="/admin/audit">Back to audit</a></p>
+</body>
+</html>

@@ -1,0 +1,356 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>host</title>
+  <style>
+    body { font-family: system-ui; margin: 16px; }
+    .row { display: flex; gap: 14px; }
+    .left { width: 360px; border: 1px solid #ddd; border-radius: 10px; padding: 10px; }
+    .right { flex: 1; border: 1px solid #ddd; border-radius: 10px; padding: 10px; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0 10px 0; }
+    canvas { width: 100%; height: 460px; border: 1px solid #ddd; background: #fff; }
+    #tip { position: fixed; display: none; background: #111; color: #fff; padding: 6px 8px; border-radius: 6px; font-size: 12px; pointer-events: none; z-index: 20; }
+    input, select, button { font-size: 12px; }
+  </style>
+</head>
+<body>
+  <a href="/app">&larr; back</a>
+  <h2 id="t"></h2>
+
+  <div class="row">
+    <div class="left">
+      <div id="left"></div>
+      <hr>
+      <h4>Edit host</h4>
+      <form id="ef">
+        Group <input name="group"><br>
+        Subgroup <input name="subgroup"><br>
+        Host name <input name="name"><br>
+        Host/IP <input name="ip"><br>
+        Interval (ms) <input name="interval_ms" type="number" min="50"><br>
+        Timeout (ms) <input name="timeout_ms" type="number" min="50"><br>
+        Down threshold (fails) <input name="down_threshold" type="number" min="1"><br>
+        Enabled
+        <select name="enabled">
+          <option value="1">on</option>
+          <option value="0">off</option>
+        </select><br>
+        <button>Save</button>
+        <span id="emsg"></span>
+      </form>
+    </div>
+
+    <div class="right">
+      <div><b>RTT / Loss Timeline</b></div>
+      <div class="toolbar">
+        Window
+        <select id="range">
+          <option value="60">1m</option>
+          <option value="300" selected>5m</option>
+          <option value="900">15m</option>
+          <option value="3600">1h</option>
+          <option value="21600">6h</option>
+          <option value="0">All</option>
+        </select>
+        <button id="liveBtn">Live: ON</button>
+        <button id="leftBtn">&larr;</button>
+        <button id="rightBtn">&rarr;</button>
+        <button id="zoomInBtn">+</button>
+        <button id="zoomOutBtn">-</button>
+        <button id="resetBtn">Reset</button>
+        <label><input id="pauseHover" type="checkbox" checked> pause updates on hover</label>
+        <span id="winInfo"></span>
+      </div>
+      <canvas id="cv" width="1400" height="460"></canvas>
+    </div>
+  </div>
+
+  <div id="tip"></div>
+
+  <script>
+    const id = new URLSearchParams(location.search).get("id");
+    const csrfToken = "{{.CSRFToken}}";
+    let all = [];
+    let view = { live: true, start: 0, end: 0 };
+    let drag = null;
+    let holdUpdates = false;
+    let yMaxFixed = 100;
+    let formDirty = false;
+    let formLocked = false;
+
+    function fmt(ts) { return new Date(ts * 1000).toLocaleString(); }
+    function lossGapSec(intervalMs) { const x = Math.ceil((intervalMs || 1000) * 2 / 1000); return x < 1 ? 1 : x; }
+    function computeFixedY(data) {
+      let m = 1;
+      for (let i = 0; i < data.length; i++) if (data[i].rtt >= 0 && data[i].rtt > m) m = data[i].rtt;
+      m = Math.ceil(m * 1.15);
+      if (m < 50) m = 50;
+      return m;
+    }
+    function byRange(data) {
+      if (!data.length) return [];
+      if (view.live) {
+        const sec = Number(document.getElementById("range").value);
+        view.end = data[data.length - 1].ts;
+        view.start = sec === 0 ? data[0].ts : Math.max(data[0].ts, view.end - sec);
+      }
+      return data.filter(x => x.ts >= view.start && x.ts <= view.end);
+    }
+    function setLive(v) {
+      view.live = v;
+      document.getElementById("liveBtn").textContent = "Live: " + (v ? "ON" : "OFF");
+    }
+    function stateOf(sample) { return sample.rtt < 0 ? "LOSS" : "UP"; }
+
+    function draw(j) {
+      const cv = document.getElementById("cv");
+      const g = cv.getContext("2d");
+      g.clearRect(0, 0, cv.width, cv.height);
+      all = j.samples || [];
+      if (!all.length) {
+        g.fillStyle = "#666";
+        g.fillText("No history yet. Wait for new samples...", 20, 30);
+        return;
+      }
+
+      let d = byRange(all);
+      if (!d.length) d = [all[all.length - 1]];
+      const pL = 64, pR = 20, pT = 20, pB = 36;
+      const W = cv.width, H = cv.height;
+      const plotW = W - pL - pR, plotH = H - pT - pB;
+      let tMin = d[0].ts, tMax = d[d.length - 1].ts;
+      if (tMin === tMax) tMax = tMin + 1;
+
+      yMaxFixed = computeFixedY(all);
+      const xAt = (t) => pL + ((t - tMin) / (tMax - tMin)) * plotW;
+      const yAt = (v) => H - pB - ((v / yMaxFixed) * plotH);
+      const y0 = yAt(0);
+
+      g.strokeStyle = "#eee";
+      for (let i = 0; i <= 5; i++) {
+        const y = pT + i * (plotH / 5);
+        g.beginPath(); g.moveTo(pL, y); g.lineTo(W - pR, y); g.stroke();
+        const val = Math.round(yMaxFixed * (1 - i / 5));
+        g.fillStyle = "#666"; g.fillText(val + " ms", 8, y + 4);
+      }
+
+      g.strokeStyle = "#ddd";
+      g.beginPath(); g.moveTo(pL, pT); g.lineTo(pL, H - pB); g.lineTo(W - pR, H - pB); g.stroke();
+
+      const pts = [];
+      const step = Math.max(1, Math.ceil(d.length / 2500));
+      const arr = [];
+      for (let i = 0; i < d.length; i += step) arr.push(d[i]);
+      if (arr[arr.length - 1] !== d[d.length - 1]) arr.push(d[d.length - 1]);
+
+      const missGap = lossGapSec(j.interval_ms || 1000);
+      for (let i = 0; i < arr.length; i++) {
+        const s = arr[i];
+        const x = xAt(s.ts);
+        const y = (s.rtt >= 0) ? yAt(s.rtt) : y0;
+        pts.push({ x, y, ts: s.ts, rtt: s.rtt, st: stateOf(s) });
+        if (i === 0) continue;
+        const a = arr[i - 1], b = arr[i];
+        const xa = xAt(a.ts), xb = xAt(b.ts);
+        const ya = (a.rtt >= 0) ? yAt(a.rtt) : y0;
+        const yb = (b.rtt >= 0) ? yAt(b.rtt) : y0;
+        const gap = b.ts - a.ts;
+        if (gap > missGap) {
+          g.strokeStyle = "#d4a017";
+          g.beginPath(); g.moveTo(xa, ya); g.lineTo(xa, y0); g.lineTo(xb, y0); g.lineTo(xb, yb); g.stroke();
+        } else if (a.rtt < 0 || b.rtt < 0) {
+          g.strokeStyle = "#c21807";
+          g.beginPath(); g.moveTo(xa, ya); g.lineTo(xb, yb); g.stroke();
+        } else {
+          g.strokeStyle = "#0b65d8";
+          g.beginPath(); g.moveTo(xa, ya); g.lineTo(xb, yb); g.stroke();
+        }
+      }
+
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        if (p.st === "UP") {
+          g.fillStyle = "#1e6bd6";
+          g.beginPath(); g.arc(p.x, p.y, 1.8, 0, Math.PI * 2); g.fill();
+        } else {
+          g.strokeStyle = "#c21807";
+          g.beginPath(); g.moveTo(p.x, p.y - 4); g.lineTo(p.x, p.y + 4); g.stroke();
+        }
+      }
+      window._pts = pts;
+
+      const ticks = 6;
+      for (let i = 0; i <= ticks; i++) {
+        const t = tMin + ((tMax - tMin) * i / ticks);
+        const x = xAt(t);
+        g.strokeStyle = "#f2f2f2";
+        g.beginPath(); g.moveTo(x, pT); g.lineTo(x, H - pB); g.stroke();
+        g.fillStyle = "#666";
+        g.fillText(new Date(t * 1000).toLocaleTimeString(), x - 28, H - 10);
+      }
+      document.getElementById("winInfo").textContent = `${fmt(tMin)} -> ${fmt(tMax)} | points: ${d.length} | yMax: ${yMaxFixed}ms`;
+    }
+
+    function bindCanvas() {
+      const cv = document.getElementById("cv");
+      const tip = document.getElementById("tip");
+      cv.onmouseenter = () => { if (document.getElementById("pauseHover").checked) holdUpdates = true; };
+      cv.onmouseleave = () => { tip.style.display = "none"; holdUpdates = false; };
+      cv.onmousedown = (e) => { setLive(false); drag = { x: e.clientX, start: view.start, end: view.end }; };
+      window.onmouseup = () => drag = null;
+      window.onmousemove = (e) => {
+        if (drag) {
+          const dx = e.clientX - drag.x;
+          const span = Math.max(1, drag.end - drag.start);
+          const dt = Math.round(-dx * (span / Math.max(1, cv.clientWidth)));
+          view.start = drag.start + dt;
+          view.end = drag.end + dt;
+          draw(window._lastJ || { samples: all, interval_ms: 1000 });
+          return;
+        }
+
+        const pts = window._pts || [];
+        if (!pts.length) return;
+        const r = cv.getBoundingClientRect();
+        const x = (e.clientX - r.left) * (cv.width / r.width);
+        const y = (e.clientY - r.top) * (cv.height / r.height);
+        let best = null, bd = 1e9;
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i], d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
+          if (d < bd) { bd = d; best = p; }
+        }
+        if (!best || bd > 250) { tip.style.display = "none"; return; }
+        tip.style.display = "block";
+        tip.innerHTML = `${fmt(best.ts)}<br>Status: ${best.st}<br>RTT: ${best.rtt < 0 ? "loss" : best.rtt + " ms"}`;
+        const tw = tip.offsetWidth || 140, th = tip.offsetHeight || 70;
+        let lx = e.clientX + 14, ly = e.clientY + 14;
+        const maxX = window.innerWidth - tw - 8, maxY = window.innerHeight - th - 8;
+        if (lx > maxX) lx = maxX;
+        if (ly > maxY) ly = maxY;
+        if (lx < 8) lx = 8;
+        if (ly < 8) ly = 8;
+        tip.style.left = lx + "px";
+        tip.style.top = ly + "px";
+      };
+      cv.onwheel = (e) => {
+        e.preventDefault();
+        setLive(false);
+        const k = e.deltaY > 0 ? 1.2 : 0.82;
+        const mid = (view.start + view.end) / 2;
+        const span = Math.max(2, (view.end - view.start) * k);
+        view.start = Math.round(mid - span / 2);
+        view.end = Math.round(mid + span / 2);
+        draw(window._lastJ || { samples: all, interval_ms: 1000 });
+      };
+    }
+
+    function bindToolbar() {
+      document.getElementById("range").onchange = () => {
+        const sec = Number(document.getElementById("range").value);
+        if (all.length) {
+          const e = all[all.length - 1].ts;
+          const s = (sec === 0) ? all[0].ts : Math.max(all[0].ts, e - sec);
+          view.start = s;
+          view.end = e;
+        }
+        setLive(true);
+        draw(window._lastJ || { samples: all, interval_ms: 1000 });
+      };
+      document.getElementById("liveBtn").onclick = () => { setLive(!view.live); if (view.live) go(); };
+      document.getElementById("leftBtn").onclick = () => {
+        setLive(false);
+        const s = (view.end - view.start) || 300;
+        view.start -= Math.round(s * 0.25);
+        view.end -= Math.round(s * 0.25);
+        draw(window._lastJ || { samples: all, interval_ms: 1000 });
+      };
+      document.getElementById("rightBtn").onclick = () => {
+        setLive(false);
+        const s = (view.end - view.start) || 300;
+        view.start += Math.round(s * 0.25);
+        view.end += Math.round(s * 0.25);
+        draw(window._lastJ || { samples: all, interval_ms: 1000 });
+      };
+      document.getElementById("zoomInBtn").onclick = () => {
+        setLive(false);
+        const m = (view.start + view.end) / 2;
+        const s = Math.max(2, (view.end - view.start) * 0.7);
+        view.start = Math.round(m - s / 2);
+        view.end = Math.round(m + s / 2);
+        draw(window._lastJ || { samples: all, interval_ms: 1000 });
+      };
+      document.getElementById("zoomOutBtn").onclick = () => {
+        setLive(false);
+        const m = (view.start + view.end) / 2;
+        const s = Math.max(2, (view.end - view.start) * 1.4);
+        view.start = Math.round(m - s / 2);
+        view.end = Math.round(m + s / 2);
+        draw(window._lastJ || { samples: all, interval_ms: 1000 });
+      };
+      document.getElementById("resetBtn").onclick = () => { setLive(true); go(); };
+    }
+
+    function fillEdit(j) {
+      if (formLocked || formDirty) return;
+      const f = document.getElementById("ef");
+      f.group.value = j.group;
+      f.subgroup.value = j.subgroup;
+      f.name.value = j.name || "";
+      f.ip.value = j.ip || "";
+      f.interval_ms.value = j.interval_ms;
+      f.timeout_ms.value = j.timeout_ms;
+      f.down_threshold.value = j.down_threshold;
+      f.enabled.value = j.enabled ? 1 : 0;
+    }
+
+    async function go() {
+      const r = await fetch("/app/api/icmp/host?id=" + id, { cache: "no-store" });
+      if (!r.ok) {
+        document.getElementById("t").textContent = `load failed: ${r.status}`;
+        return;
+      }
+      const j = await r.json();
+      window._lastJ = j;
+      if (!formLocked) {
+        document.getElementById("t").textContent = `#${j.id} ${j.name} (${j.ip})`;
+        document.getElementById("left").innerHTML = `<b>Group/Subgroup:</b> ${j.group} / ${j.subgroup}<br><b>Status:</b> ${j.st}<br><b>OK:</b> ${j.ok} <b>Fail(loss):</b> ${j.fail}<br><b>Last:</b> ${j.last} ms<br><b>Avg:</b> ${j.avg} ms<br><b>Min/Max:</b> ${j.min}/${j.max} ms<br><b>Samples(all period):</b> ${j.samples_count}`;
+      }
+      if (!view.start || view.live) {
+        const sec = Number(document.getElementById("range").value);
+        const end = (j.samples && j.samples.length) ? j.samples[j.samples.length - 1].ts : Math.floor(Date.now() / 1000);
+        const start = (sec === 0 || !j.samples || !j.samples.length) ? (j.samples && j.samples.length ? j.samples[0].ts : end - 300) : Math.max(j.samples[0].ts, end - sec);
+        view.start = start;
+        view.end = end;
+      }
+      fillEdit(j);
+      draw(j);
+    }
+
+    document.getElementById("ef").onfocusin = () => { formLocked = true; };
+    document.getElementById("ef").oninput = () => { formDirty = true; formLocked = true; };
+    document.getElementById("ef").onsubmit = async (e) => {
+      e.preventDefault();
+      const q = new URLSearchParams(new FormData(e.target)).toString();
+      const r = await fetch("/app/api/icmp/host/edit?id=" + id, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-CSRF-Token": csrfToken
+        },
+        body: q
+      });
+      document.getElementById("emsg").textContent = await r.text();
+      formDirty = false;
+      formLocked = false;
+      go();
+    };
+
+    bindCanvas();
+    bindToolbar();
+    go();
+    setInterval(() => { if (view.live && !holdUpdates) go(); }, 2000);
+  </script>
+</body>
+</html>
