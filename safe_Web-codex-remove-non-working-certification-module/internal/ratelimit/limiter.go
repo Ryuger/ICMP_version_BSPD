@@ -51,7 +51,6 @@ func (l *Limiter) Allow(key string, now time.Time) bool {
 	return true
 }
 
-
 func (l *Limiter) prune(now time.Time) {
 	for key, st := range l.states {
 		if now.Sub(st.start) >= l.window {

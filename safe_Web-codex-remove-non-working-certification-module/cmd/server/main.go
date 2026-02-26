@@ -50,18 +50,20 @@ const (
 )
 
 type App struct {
-	Store         store.Store
-	Limiter       *ratelimit.Limiter
-	AdminLimiter  *ratelimit.Limiter
-	Sessions      *session.Store
-	AdminSessions *session.Store
-	DummyHash     string
-	CookieName    string
-	AdminCookie   string
-	Settings      *Settings
-	ICMPRepo      *icmprepo.Repo
-	PublicTLS     bool
-	AdminTLS      bool
+	Store            store.Store
+	Limiter          *ratelimit.Limiter
+	AdminLimiter     *ratelimit.Limiter
+	Sessions         *session.Store
+	AdminSessions    *session.Store
+	DummyHash        string
+	CookieName       string
+	AdminCookie      string
+	PublicCSRFCookie string
+	AdminCSRFCookie  string
+	Settings         *Settings
+	ICMPRepo         *icmprepo.Repo
+	PublicTLS        bool
+	AdminTLS         bool
 
 	icmpHostsCacheMu    sync.Mutex
 	icmpHostsCacheUntil time.Time
@@ -157,18 +159,20 @@ func main() {
 	settings := NewSettings(requireLogin)
 
 	app := &App{
-		Store:         st,
-		Limiter:       ratelimit.New(5, time.Minute),
-		AdminLimiter:  ratelimit.New(5, time.Minute),
-		Sessions:      session.NewStore(publicSessionTTL),
-		AdminSessions: session.NewStore(adminSessionTTL),
-		DummyHash:     dummyHash,
-		CookieName:    "session_id",
-		AdminCookie:   "admin_session",
-		Settings:      settings,
-		ICMPRepo:      icmpRepo,
-		PublicTLS:     publicTLSEnabled,
-		AdminTLS:      adminTLSEnabled,
+		Store:            st,
+		Limiter:          ratelimit.New(5, time.Minute),
+		AdminLimiter:     ratelimit.New(5, time.Minute),
+		Sessions:         session.NewStore(publicSessionTTL),
+		AdminSessions:    session.NewStore(adminSessionTTL),
+		DummyHash:        dummyHash,
+		CookieName:       "session_id",
+		AdminCookie:      "admin_session",
+		PublicCSRFCookie: "public_csrf_token",
+		AdminCSRFCookie:  "admin_csrf_token",
+		Settings:         settings,
+		ICMPRepo:         icmpRepo,
+		PublicTLS:        publicTLSEnabled,
+		AdminTLS:         adminTLSEnabled,
 	}
 
 	bootstrapAdminUser(app)
@@ -184,22 +188,22 @@ func main() {
 		}
 
 		publicMux := http.NewServeMux()
-		publicMux.Handle("/", app.ipGuard(app.securityHeaders(http.HandlerFunc(app.indexHandler))))
-		publicMux.Handle("/favicon.ico", app.ipGuard(app.securityHeaders(http.HandlerFunc(app.faviconHandler))))
-		publicMux.Handle("/login", app.ipGuard(app.securityHeaders(http.HandlerFunc(app.loginHandler))))
-		publicMux.Handle("/app", app.ipGuard(app.securityHeaders(http.HandlerFunc(app.appHandler))))
-		publicMux.Handle("/app/host", app.ipGuard(app.securityHeaders(http.HandlerFunc(app.appHostHandler))))
-		publicMux.Handle("/change-password", app.ipGuard(app.securityHeaders(http.HandlerFunc(app.changePasswordHandler))))
-		publicMux.Handle("/app/api/icmp/hosts", app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostsHandler)))))
-		publicMux.Handle("/app/api/icmp/host", app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostHandler)))))
-		publicMux.Handle("/app/api/icmp/host/samples", app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostSamplesHandler)))))
-		publicMux.Handle("/app/api/icmp/host/events", app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostEventsHandler)))))
-		publicMux.Handle("/app/api/icmp/host/add", app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostAddHandler)))))
-		publicMux.Handle("/app/api/icmp/host/edit", app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostEditHandler)))))
-		publicMux.Handle("/app/api/icmp/host/delete", app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostDeleteHandler)))))
-		publicMux.Handle("/app/api/icmp/export.csv", app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpExportCSVHandler)))))
-		publicMux.Handle("/app/api/icmp/import/preview.csv", app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpImportPreviewCSVHandler)))))
-		publicMux.Handle("/app/api/icmp/import.csv", app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpImportCSVHandler)))))
+		publicMux.Handle("/", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.indexHandler)))))
+		publicMux.Handle("/favicon.ico", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.faviconHandler)))))
+		publicMux.Handle("/login", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.loginHandler)))))
+		publicMux.Handle("/app", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.appHandler)))))
+		publicMux.Handle("/app/host", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.appHostHandler)))))
+		publicMux.Handle("/change-password", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.changePasswordHandler)))))
+		publicMux.Handle("/app/api/icmp/hosts", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostsHandler))))))
+		publicMux.Handle("/app/api/icmp/host", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostHandler))))))
+		publicMux.Handle("/app/api/icmp/host/samples", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostSamplesHandler))))))
+		publicMux.Handle("/app/api/icmp/host/events", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostEventsHandler))))))
+		publicMux.Handle("/app/api/icmp/host/add", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostAddHandler))))))
+		publicMux.Handle("/app/api/icmp/host/edit", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostEditHandler))))))
+		publicMux.Handle("/app/api/icmp/host/delete", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostDeleteHandler))))))
+		publicMux.Handle("/app/api/icmp/export.csv", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpExportCSVHandler))))))
+		publicMux.Handle("/app/api/icmp/import/preview.csv", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpImportPreviewCSVHandler))))))
+		publicMux.Handle("/app/api/icmp/import.csv", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpImportCSVHandler))))))
 
 		publicServer = &http.Server{
 			Addr:              publicAddr,
@@ -403,6 +407,17 @@ func (a *App) ipGuard(next http.Handler) http.Handler {
 			return
 		}
 
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (a *App) publicDenyAdminPaths(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/admin" || strings.HasPrefix(r.URL.Path, "/admin/") {
+			a.auditUserEvent(r, "public_denied_admin_path", a.publicActor(r), map[string]any{"path": r.URL.Path})
+			minimalResponse(w)
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -662,7 +677,7 @@ func (a *App) loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	setSessionCookie(w, a.CookieName, sess.ID, a.PublicTLS)
-	setCSRFCookie(w, sess.CSRFToken, a.PublicTLS)
+	setCSRFCookie(w, a.PublicCSRFCookie, sess.CSRFToken, a.PublicTLS)
 
 	if mustChange {
 		a.auditUserEvent(r, "login_requires_password_change", username, map[string]any{})
@@ -712,7 +727,7 @@ func (a *App) appHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setCSRFCookie(w, sess.CSRFToken, a.PublicTLS)
+	setCSRFCookie(w, a.PublicCSRFCookie, sess.CSRFToken, a.PublicTLS)
 	a.auditUserEvent(r, "app_view", user.Username, map[string]any{"path": r.URL.Path})
 	web.Render(w, "app.html", templateData{
 		Username:          user.Username,
@@ -757,7 +772,7 @@ func (a *App) appHostHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setCSRFCookie(w, sess.CSRFToken, a.PublicTLS)
+	setCSRFCookie(w, a.PublicCSRFCookie, sess.CSRFToken, a.PublicTLS)
 	web.Render(w, "app_host.html", templateData{
 		Username:          user.Username,
 		PasswordChangedAt: user.PasswordChangedAt.Format(time.RFC3339),
@@ -1344,7 +1359,7 @@ func (a *App) adminLoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	setSessionCookie(w, a.AdminCookie, sess.ID, a.AdminTLS)
-	setCSRFCookie(w, sess.CSRFToken, a.AdminTLS)
+	setCSRFCookie(w, a.AdminCSRFCookie, sess.CSRFToken, a.AdminTLS)
 	_ = a.Store.InsertAuditEntry(store.AuditEntry{Actor: username, Action: "admin_login", TargetType: "admin", TargetID: username, Metadata: "{}", CreatedAt: time.Now()})
 	http.Redirect(w, r, "/admin/dashboard", http.StatusSeeOther)
 }
@@ -1538,7 +1553,7 @@ func (a *App) adminSettingsHandler(w http.ResponseWriter, r *http.Request) {
 
 	csrf := a.rotateAdminCSRF(w)
 	web.Render(w, "admin_settings.html", templateData{
-		Settings: &SettingsView{RequireLogin: a.Settings.RequireLogin()},
+		Settings:  &SettingsView{RequireLogin: a.Settings.RequireLogin()},
 		CSRFToken: csrf,
 	})
 }
@@ -1635,7 +1650,7 @@ func (a *App) issueCSRFCookie(w http.ResponseWriter) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	setCSRFCookie(w, token, a.PublicTLS)
+	setCSRFCookie(w, a.PublicCSRFCookie, token, a.PublicTLS)
 	return token, nil
 }
 
@@ -1644,7 +1659,7 @@ func (a *App) issueAdminCSRFCookie(w http.ResponseWriter) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	setCSRFCookie(w, token, a.AdminTLS)
+	setCSRFCookie(w, a.AdminCSRFCookie, token, a.AdminTLS)
 	return token, nil
 }
 
@@ -1653,7 +1668,7 @@ func (a *App) rotateAdminCSRF(w http.ResponseWriter) string {
 	if err != nil {
 		return ""
 	}
-	setCSRFCookie(w, token, a.AdminTLS)
+	setCSRFCookie(w, a.AdminCSRFCookie, token, a.AdminTLS)
 	return token
 }
 
@@ -1662,7 +1677,7 @@ func (a *App) verifyCSRF(r *http.Request) bool {
 	if formToken == "" {
 		formToken = r.Header.Get("X-CSRF-Token")
 	}
-	cookie, err := r.Cookie("csrf_token")
+	cookie, err := r.Cookie(a.PublicCSRFCookie)
 	if err != nil || cookie.Value == "" {
 		return false
 	}
@@ -1674,7 +1689,7 @@ func (a *App) verifyAdminCSRF(r *http.Request) bool {
 		return false
 	}
 	formToken := r.FormValue("csrf_token")
-	cookie, err := r.Cookie("csrf_token")
+	cookie, err := r.Cookie(a.AdminCSRFCookie)
 	if err != nil || cookie.Value == "" {
 		return false
 	}
@@ -1689,7 +1704,7 @@ func (a *App) verifySessionCSRF(r *http.Request, token string) bool {
 	if formToken == "" {
 		formToken = r.Header.Get("X-CSRF-Token")
 	}
-	cookie, err := r.Cookie("csrf_token")
+	cookie, err := r.Cookie(a.PublicCSRFCookie)
 	if err != nil || cookie.Value == "" {
 		return false
 	}
@@ -1889,9 +1904,9 @@ func setSessionCookie(w http.ResponseWriter, name, value string, secure bool) {
 	http.SetCookie(w, cookie)
 }
 
-func setCSRFCookie(w http.ResponseWriter, value string, secure bool) {
+func setCSRFCookie(w http.ResponseWriter, name, value string, secure bool) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "csrf_token",
+		Name:     name,
 		Value:    value,
 		Path:     "/",
 		Secure:   secure,
