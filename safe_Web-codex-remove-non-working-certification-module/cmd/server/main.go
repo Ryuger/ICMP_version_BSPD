@@ -33,6 +33,7 @@ const (
 	defaultPublicAddr = ":8443"
 	defaultAdminAddr  = "127.0.0.1:9443"
 	defaultLocalAddr  = ""
+	defaultServerRole = "all"
 
 	defaultPublicCertPath = "config/cert.pem"
 	defaultPublicKeyPath  = "config/key.pem"
@@ -110,9 +111,15 @@ type templateData struct {
 }
 
 func main() {
-	publicAddr, publicEnabled, err := promptPublicListenAddr()
+	serverRole := getenv("SERVER_ROLE", defaultServerRole)
+	publicEnabled, adminEnabled, err := parseServerRole(serverRole)
 	if err != nil {
-		log.Fatalf("public interface selection failed: %v", err)
+		log.Fatalf("invalid SERVER_ROLE: %v", err)
+	}
+
+	publicAddr := getenv("LISTEN_PUBLIC_ADDR", defaultPublicAddr)
+	if publicEnabled {
+		validateListenAddr(publicAddr)
 	}
 
 	adminAddr := defaultAdminAddr
@@ -124,14 +131,13 @@ func main() {
 	publicKeyPath := getenv("PUBLIC_KEY_PATH", defaultPublicKeyPath)
 	adminCertPath := getenv("ADMIN_CERT_PATH", defaultAdminCertPath)
 	adminKeyPath := getenv("ADMIN_KEY_PATH", defaultAdminKeyPath)
-	publicTLSEnabled := getenvBool("PUBLIC_TLS_ENABLED", false)
-	adminTLSEnabled := getenvBool("ADMIN_TLS_ENABLED", false)
+	publicTLSEnabled := getenvBool("PUBLIC_TLS_ENABLED", true)
+	adminTLSEnabled := getenvBool("ADMIN_TLS_ENABLED", true)
 	requireLogin := getenvBool("REQUIRE_LOGIN", true)
 
-	if publicEnabled {
-		validateListenAddr(publicAddr)
+	if adminEnabled {
+		validateLoopbackAddr(adminAddr)
 	}
-	validateLoopbackAddr(adminAddr)
 
 	st, err := store.NewStore()
 	if err != nil {
@@ -206,26 +212,29 @@ func main() {
 		}
 	}
 
-	adminMux := http.NewServeMux()
-	adminMux.Handle("/", app.adminIPGuard(app.securityHeaders(http.HandlerFunc(app.adminRootHandler))))
-	adminMux.Handle("/admin/login", app.adminIPGuard(app.securityHeaders(http.HandlerFunc(app.adminLoginHandler))))
-	adminMux.Handle("/admin/logout", app.adminIPGuard(app.securityHeaders(http.HandlerFunc(app.adminLogoutHandler))))
-	adminMux.Handle("/admin/dashboard", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminDashboardHandler))))
-	adminMux.Handle("/admin/clients", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminClientsHandler))))
-	adminMux.Handle("/admin/clients/", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminClientDetailHandler))))
-	adminMux.Handle("/admin/whitelist", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminWhitelistHandler))))
-	adminMux.Handle("/admin/settings", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminSettingsHandler))))
-	adminMux.Handle("/admin/audit", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminAuditHandler))))
-	adminMux.Handle("/admin/audit/admin", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminAuditAdminHandler))))
-	adminMux.Handle("/admin/audit/users", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminAuditUsersHandler))))
+	var adminServer *http.Server
+	if adminEnabled {
+		adminMux := http.NewServeMux()
+		adminMux.Handle("/", app.adminIPGuard(app.securityHeaders(http.HandlerFunc(app.adminRootHandler))))
+		adminMux.Handle("/admin/login", app.adminIPGuard(app.securityHeaders(http.HandlerFunc(app.adminLoginHandler))))
+		adminMux.Handle("/admin/logout", app.adminIPGuard(app.securityHeaders(http.HandlerFunc(app.adminLogoutHandler))))
+		adminMux.Handle("/admin/dashboard", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminDashboardHandler))))
+		adminMux.Handle("/admin/clients", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminClientsHandler))))
+		adminMux.Handle("/admin/clients/", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminClientDetailHandler))))
+		adminMux.Handle("/admin/whitelist", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminWhitelistHandler))))
+		adminMux.Handle("/admin/settings", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminSettingsHandler))))
+		adminMux.Handle("/admin/audit", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminAuditHandler))))
+		adminMux.Handle("/admin/audit/admin", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminAuditAdminHandler))))
+		adminMux.Handle("/admin/audit/users", app.adminAuth(app.securityHeaders(http.HandlerFunc(app.adminAuditUsersHandler))))
 
-	adminServer := &http.Server{
-		Addr:              adminAddr,
-		Handler:           adminMux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		adminServer = &http.Server{
+			Addr:              adminAddr,
+			Handler:           adminMux,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       10 * time.Second,
+			WriteTimeout:      10 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		}
 	}
 
 	if localAddr != "" {
@@ -250,8 +259,24 @@ func main() {
 		}()
 	}
 
-	if !publicEnabled {
-		log.Printf("public client interface disabled")
+	if publicEnabled && !adminEnabled {
+		log.Printf("admin interface disabled by SERVER_ROLE=%s", serverRole)
+		if publicTLSEnabled {
+			log.Printf("public https listening on %s", publicAddr)
+			if err := publicServer.ListenAndServeTLS(publicCertPath, publicKeyPath); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Fatalf("public server error: %v", err)
+			}
+			return
+		}
+		log.Printf("public http listening on %s", publicAddr)
+		if err := publicServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("public server error: %v", err)
+		}
+		return
+	}
+
+	if adminEnabled && !publicEnabled {
+		log.Printf("public client interface disabled by SERVER_ROLE=%s", serverRole)
 		log.Printf("admin listening on %s", adminAddr)
 		if adminTLSEnabled {
 			if err := adminServer.ListenAndServeTLS(adminCertPath, adminKeyPath); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -263,6 +288,10 @@ func main() {
 			log.Fatalf("admin server error: %v", err)
 		}
 		return
+	}
+
+	if !adminEnabled && !publicEnabled {
+		log.Fatalf("both interfaces disabled; set SERVER_ROLE to public, admin, or all")
 	}
 
 	go func() {
@@ -289,6 +318,19 @@ func main() {
 	log.Printf("public http listening on %s", publicAddr)
 	if err := publicServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("public server error: %v", err)
+	}
+}
+
+func parseServerRole(value string) (publicEnabled bool, adminEnabled bool, err error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "public":
+		return true, false, nil
+	case "admin":
+		return false, true, nil
+	case "all", "both":
+		return true, true, nil
+	default:
+		return false, false, fmt.Errorf("unsupported value %q (allowed: public|admin|all)", value)
 	}
 }
 
