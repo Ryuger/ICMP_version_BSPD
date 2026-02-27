@@ -267,13 +267,14 @@ func main() {
 
 	if adminEnabled && !publicEnabled {
 		log.Printf("public client interface disabled by SERVER_ROLE=%s", serverRole)
-		log.Printf("admin listening on %s", adminAddr)
 		if adminTLSEnabled {
+			log.Printf("admin https listening on %s", adminAddr)
 			if err := adminServer.ListenAndServeTLS(adminCertPath, adminKeyPath); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Fatalf("admin server error: %v", err)
 			}
 			return
 		}
+		log.Printf("admin http listening on %s", adminAddr)
 		if err := adminServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("admin server error: %v", err)
 		}
@@ -285,13 +286,14 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("admin listening on %s", adminAddr)
 		if adminTLSEnabled {
+			log.Printf("admin https listening on %s", adminAddr)
 			if err := adminServer.ListenAndServeTLS(adminCertPath, adminKeyPath); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Fatalf("admin server error: %v", err)
 			}
 			return
 		}
+		log.Printf("admin http listening on %s", adminAddr)
 		if err := adminServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("admin server error: %v", err)
 		}

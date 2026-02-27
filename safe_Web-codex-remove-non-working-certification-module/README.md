@@ -89,6 +89,17 @@ openssl req -x509 -newkey rsa:4096 -keyout config/key.pem -out config/cert.pem -
 
 ---
 
+
+## 4.1) Если в логах `TLS handshake error: client sent an HTTP request to an HTTPS server`
+
+Это значит, что админ-сервер запущен с TLS (`ADMIN_TLS_ENABLED=true`), а в браузере открыт `http://...` вместо `https://...`.
+
+Варианты:
+- открыть `https://127.0.0.1:<PORT>/` (например `https://127.0.0.1:8645/`),
+- или для локального теста отключить TLS: `ADMIN_TLS_ENABLED=false`, после чего использовать `http://...`.
+
+---
+
 ## 5) Откуда берутся «первые» логины/пароли
 
 ### Админ
