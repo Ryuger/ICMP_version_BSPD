@@ -1,8 +1,9 @@
 # safe_Web — инструкция «для чайников»
 
-Это один Go-бинарник с двумя веб-интерфейсами:
-- **Публичный** (для пользователей/клиентов): HTTPS, логин в систему.
-- **Админка** (только на localhost): управление клиентами, пользователями, whitelist и аудитом.
+Это один Go-бинарник, который можно запускать в разных ролях:
+- `SERVER_ROLE=public` — только публичный интерфейс.
+- `SERVER_ROLE=admin` — только админка.
+- `SERVER_ROLE=all` — оба интерфейса (режим по умолчанию для совместимости).
 
 ---
 
@@ -41,6 +42,25 @@ $env:BOOTSTRAP_ADMIN_PASSWORD = "ChangeMeNow!"
 # Запуск
 go run ./cmd/server
 ```
+
+---
+
+
+## 2.1) Рекомендованный запуск как **два процесса**
+
+Публичный интерфейс:
+```powershell
+$env:SERVER_ROLE = "public"
+go run ./cmd/server
+```
+
+Админский интерфейс (на той же машине):
+```powershell
+$env:SERVER_ROLE = "admin"
+go run ./cmd/server
+```
+
+Так атака на public-процесс не «заберёт» напрямую event loop админки (процессы раздельные).
 
 ---
 
@@ -128,9 +148,12 @@ openssl req -x509 -newkey rsa:4096 -keyout config/key.pem -out config/cert.pem -
 
 ## 8) Полезные переменные окружения
 
+- `SERVER_ROLE` — `public`, `admin` или `all` (по умолчанию `all`)
 - `LISTEN_PUBLIC_ADDR` — публичный адрес сервера (например `:8443`)
-- `LISTEN_ADMIN_ADDR` — адрес админки (обязательно loopback, например `127.0.0.1:9443`)
+- `LISTEN_ADMIN_ADDR` — адрес админки (фиксирован `127.0.0.1:9443`)
 - `PUBLIC_CERT_PATH`, `PUBLIC_KEY_PATH` — TLS для публичного сервера
+- `PUBLIC_TLS_ENABLED` — по умолчанию `true`
+- `ADMIN_TLS_ENABLED` — по умолчанию `true`
 - `BOOTSTRAP_ADMIN_USER`, `BOOTSTRAP_ADMIN_PASSWORD` — первичный админ
 - `DB_DSN` — Postgres DSN (если используете postgres build)
 
@@ -142,3 +165,4 @@ openssl req -x509 -newkey rsa:4096 -keyout config/key.pem -out config/cert.pem -
 2. С внешней машины админка **не открывается**.
 3. Без whitelist IP пользователь не попадает на публичные страницы.
 4. Пользователь, созданный через админку, может войти только со своего whitelisted IP.
+5. На публичном интерфейсе пути `/admin` и `/admin/*` принудительно отвергаются (`404`).

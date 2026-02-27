@@ -29,6 +29,8 @@ func (l *Limiter) Allow(key string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	l.prune(now)
+
 	st, ok := l.states[key]
 	if !ok {
 		l.states[key] = &state{count: 1, start: now}
@@ -47,4 +49,12 @@ func (l *Limiter) Allow(key string, now time.Time) bool {
 
 	st.count++
 	return true
+}
+
+func (l *Limiter) prune(now time.Time) {
+	for key, st := range l.states {
+		if now.Sub(st.start) >= l.window {
+			delete(l.states, key)
+		}
+	}
 }
