@@ -192,18 +192,7 @@ func main() {
 		publicMux.Handle("/favicon.ico", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.faviconHandler)))))
 		publicMux.Handle("/login", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.loginHandler)))))
 		publicMux.Handle("/app", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.appHandler)))))
-		publicMux.Handle("/app/host", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.appHostHandler)))))
 		publicMux.Handle("/change-password", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.changePasswordHandler)))))
-		publicMux.Handle("/app/api/icmp/hosts", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostsHandler))))))
-		publicMux.Handle("/app/api/icmp/host", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostHandler))))))
-		publicMux.Handle("/app/api/icmp/host/samples", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostSamplesHandler))))))
-		publicMux.Handle("/app/api/icmp/host/events", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostEventsHandler))))))
-		publicMux.Handle("/app/api/icmp/host/add", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostAddHandler))))))
-		publicMux.Handle("/app/api/icmp/host/edit", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostEditHandler))))))
-		publicMux.Handle("/app/api/icmp/host/delete", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostDeleteHandler))))))
-		publicMux.Handle("/app/api/icmp/export.csv", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpExportCSVHandler))))))
-		publicMux.Handle("/app/api/icmp/import/preview.csv", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpImportPreviewCSVHandler))))))
-		publicMux.Handle("/app/api/icmp/import.csv", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpImportCSVHandler))))))
 
 		publicServer = &http.Server{
 			Addr:              publicAddr,
