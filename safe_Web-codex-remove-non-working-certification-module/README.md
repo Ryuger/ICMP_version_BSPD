@@ -30,6 +30,7 @@ $env:LISTEN_PUBLIC_ADDR = ":8443"
 
 # Админка (только локально!)
 $env:LISTEN_ADMIN_ADDR = "127.0.0.1:9443"
+# Можно свой loopback-порт, например: "127.0.0.1:8645"
 
 # Сертификат публичного HTTPS
 $env:PUBLIC_CERT_PATH = "config/cert.pem"
@@ -150,7 +151,7 @@ openssl req -x509 -newkey rsa:4096 -keyout config/key.pem -out config/cert.pem -
 
 - `SERVER_ROLE` — `public`, `admin` или `all` (по умолчанию `all`)
 - `LISTEN_PUBLIC_ADDR` — публичный адрес сервера (например `:8443`)
-- `LISTEN_ADMIN_ADDR` — адрес админки (фиксирован `127.0.0.1:9443`)
+- `LISTEN_ADMIN_ADDR` — адрес админки (по умолчанию `127.0.0.1:9443`, можно менять порт, но только loopback)
 - `PUBLIC_CERT_PATH`, `PUBLIC_KEY_PATH` — TLS для публичного сервера
 - `PUBLIC_TLS_ENABLED` — по умолчанию `true`
 - `ADMIN_TLS_ENABLED` — по умолчанию `true`
@@ -161,7 +162,7 @@ openssl req -x509 -newkey rsa:4096 -keyout config/key.pem -out config/cert.pem -
 
 ## 9) Мини-чек после запуска
 
-1. Открывается админка на `127.0.0.1:9443`.
+1. Открывается админка на `LISTEN_ADMIN_ADDR` (по умолчанию `127.0.0.1:9443`).
 2. С внешней машины админка **не открывается**.
 3. Без whitelist IP пользователь не попадает на публичные страницы.
 4. Пользователь, созданный через админку, может войти только со своего whitelisted IP.

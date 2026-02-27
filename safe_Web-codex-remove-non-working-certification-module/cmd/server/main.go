@@ -124,10 +124,7 @@ func main() {
 		validateListenAddr(publicAddr)
 	}
 
-	adminAddr := defaultAdminAddr
-	if requested := strings.TrimSpace(os.Getenv("LISTEN_ADMIN_ADDR")); requested != "" && requested != defaultAdminAddr {
-		log.Printf("LISTEN_ADMIN_ADDR is ignored; admin is fixed to %s", defaultAdminAddr)
-	}
+	adminAddr := getenv("LISTEN_ADMIN_ADDR", defaultAdminAddr)
 	localAddr := getenv("LISTEN_LOCAL_ADDR", defaultLocalAddr)
 	publicCertPath := getenv("PUBLIC_CERT_PATH", defaultPublicCertPath)
 	publicKeyPath := getenv("PUBLIC_KEY_PATH", defaultPublicKeyPath)
