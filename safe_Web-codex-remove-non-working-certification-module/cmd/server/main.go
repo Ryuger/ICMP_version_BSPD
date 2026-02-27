@@ -124,10 +124,7 @@ func main() {
 		validateListenAddr(publicAddr)
 	}
 
-	adminAddr := defaultAdminAddr
-	if requested := strings.TrimSpace(os.Getenv("LISTEN_ADMIN_ADDR")); requested != "" && requested != defaultAdminAddr {
-		log.Printf("LISTEN_ADMIN_ADDR is ignored; admin is fixed to %s", defaultAdminAddr)
-	}
+	adminAddr := getenv("LISTEN_ADMIN_ADDR", defaultAdminAddr)
 	localAddr := getenv("LISTEN_LOCAL_ADDR", defaultLocalAddr)
 	publicCertPath := getenv("PUBLIC_CERT_PATH", defaultPublicCertPath)
 	publicKeyPath := getenv("PUBLIC_KEY_PATH", defaultPublicKeyPath)
@@ -192,18 +189,7 @@ func main() {
 		publicMux.Handle("/favicon.ico", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.faviconHandler)))))
 		publicMux.Handle("/login", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.loginHandler)))))
 		publicMux.Handle("/app", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.appHandler)))))
-		publicMux.Handle("/app/host", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.appHostHandler)))))
 		publicMux.Handle("/change-password", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(http.HandlerFunc(app.changePasswordHandler)))))
-		publicMux.Handle("/app/api/icmp/hosts", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostsHandler))))))
-		publicMux.Handle("/app/api/icmp/host", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostHandler))))))
-		publicMux.Handle("/app/api/icmp/host/samples", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostSamplesHandler))))))
-		publicMux.Handle("/app/api/icmp/host/events", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostEventsHandler))))))
-		publicMux.Handle("/app/api/icmp/host/add", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostAddHandler))))))
-		publicMux.Handle("/app/api/icmp/host/edit", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostEditHandler))))))
-		publicMux.Handle("/app/api/icmp/host/delete", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpHostDeleteHandler))))))
-		publicMux.Handle("/app/api/icmp/export.csv", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpExportCSVHandler))))))
-		publicMux.Handle("/app/api/icmp/import/preview.csv", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpImportPreviewCSVHandler))))))
-		publicMux.Handle("/app/api/icmp/import.csv", app.publicDenyAdminPaths(app.ipGuard(app.securityHeaders(app.publicAppAuth(http.HandlerFunc(app.icmpImportCSVHandler))))))
 
 		publicServer = &http.Server{
 			Addr:              publicAddr,
@@ -281,13 +267,14 @@ func main() {
 
 	if adminEnabled && !publicEnabled {
 		log.Printf("public client interface disabled by SERVER_ROLE=%s", serverRole)
-		log.Printf("admin listening on %s", adminAddr)
 		if adminTLSEnabled {
+			log.Printf("admin https listening on %s", adminAddr)
 			if err := adminServer.ListenAndServeTLS(adminCertPath, adminKeyPath); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Fatalf("admin server error: %v", err)
 			}
 			return
 		}
+		log.Printf("admin http listening on %s", adminAddr)
 		if err := adminServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("admin server error: %v", err)
 		}
@@ -299,13 +286,14 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("admin listening on %s", adminAddr)
 		if adminTLSEnabled {
+			log.Printf("admin https listening on %s", adminAddr)
 			if err := adminServer.ListenAndServeTLS(adminCertPath, adminKeyPath); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Fatalf("admin server error: %v", err)
 			}
 			return
 		}
+		log.Printf("admin http listening on %s", adminAddr)
 		if err := adminServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("admin server error: %v", err)
 		}
